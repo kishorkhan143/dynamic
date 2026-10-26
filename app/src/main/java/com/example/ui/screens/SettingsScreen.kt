@@ -32,8 +32,13 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import androidx.core.content.ContextCompat
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.ui.platform.LocalContext
 import com.example.service.DynamicIslandOverlayService
 import androidx.compose.material3.AlertDialog
@@ -96,6 +101,22 @@ fun SettingsScreen(
     var isOverlayRunning by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+    }
+
+    val canDrawOverlays = Settings.canDrawOverlays(context)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -113,14 +134,75 @@ fun SettingsScreen(
             letterSpacing = 1.2.sp
         )
         Text(
-            text = "CONFIG // PRIVACY // OS LIMITATIONS",
+            text = "CONFIG // PRIVACY // OS PERMISSIONS",
             fontFamily = OrbitronFontFamily,
             fontSize = 11.sp,
             color = AuraElectricAqua,
             letterSpacing = 0.8.sp
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // Android Permission Hub Card
+        SettingGroupCard(title = "ANDROID PERMISSIONS DASHBOARD") {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                // 1. Overlay Permission (Display over other apps)
+                PermissionStatusItem(
+                    icon = Icons.Default.Visibility,
+                    title = "Display Over Other Apps (Overlay)",
+                    desc = "Required to float the Dynamic Island camera notch pill across all apps.",
+                    isGranted = canDrawOverlays,
+                    actionLabel = if (canDrawOverlays) "GRANTED" else "GRANT IN SETTINGS",
+                    onAction = {
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(intent)
+                    }
+                )
+
+                // 2. Notification Permission (Background Service)
+                PermissionStatusItem(
+                    icon = Icons.Default.Notifications,
+                    title = "Background Notification Service",
+                    desc = "Keeps the Dynamic Island notch service persistent on Android 13+.",
+                    isGranted = hasNotificationPermission,
+                    actionLabel = if (hasNotificationPermission) "ACTIVE" else "ENABLE",
+                    onAction = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                )
+
+                // 3. Camera Sensor Permission
+                PermissionStatusItem(
+                    icon = Icons.Default.CameraAlt,
+                    title = "Front Optical Camera",
+                    desc = "Powers live camera view and real-time facial feature landmark detection.",
+                    isGranted = hasCameraPermission,
+                    actionLabel = if (hasCameraPermission) "GRANTED" else "ALLOW CAMERA",
+                    onAction = {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                )
+
+                // 4. Biometric Hardware Authentication Trigger
+                PermissionStatusItem(
+                    icon = Icons.Default.Security,
+                    title = "Biometric Hardware Verification",
+                    desc = "Test hardware biometric authentication and trigger the Dynamic Island animation.",
+                    isGranted = true,
+                    actionLabel = "TEST FACE ID",
+                    onAction = {
+                        viewModel.startScanSimulation()
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Dynamic Island Setting Card
         SettingGroupCard(title = "CAMERA CUTOUT DISPLAY") {
@@ -467,6 +549,77 @@ private fun PrivacyRow(
                 fontSize = 11.sp,
                 color = AuraTextSecondary,
                 lineHeight = 15.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionStatusItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    desc: String,
+    isGranted: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isGranted) AuraSuccess else AuraElectricAqua,
+                modifier = Modifier
+                    .size(20.dp)
+                    .padding(top = 2.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = title,
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AuraTextPrimary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = desc,
+                    fontSize = 11.sp,
+                    color = AuraTextSecondary,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Button(
+            onClick = onAction,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isGranted) Color(0xFF0E2218) else Color(0xFF141F2E),
+                contentColor = if (isGranted) AuraSuccess else AuraElectricAqua
+            ),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isGranted) AuraSuccess.copy(alpha = 0.4f) else AuraElectricAqua.copy(alpha = 0.4f)
+            ),
+            modifier = Modifier.height(34.dp)
+        ) {
+            Text(
+                text = actionLabel,
+                fontFamily = OrbitronFontFamily,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
             )
         }
     }

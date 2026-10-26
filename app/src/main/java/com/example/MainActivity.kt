@@ -26,6 +26,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,8 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.statusBarsPadding
 import com.example.ui.components.DynamicIslandBar
 import com.example.ui.components.FullScreenPreviewDialog
+import com.example.ui.components.LockScreenOverlay
 import com.example.ui.screens.AnimationsScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.SettingsScreen
@@ -81,7 +88,14 @@ fun AuraApp(
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val showFullScreenPreview by viewModel.showFullScreenPreview.collectAsState()
     val isDynamicIslandEnabled by viewModel.isDynamicIslandEnabled.collectAsState()
+    val isAppUnlocked by viewModel.isAppUnlocked.collectAsState()
+    val scanState by viewModel.scanState.collectAsState()
     val studioConfig by viewModel.studioConfig.collectAsState()
+
+    // Automatically execute Face ID unlock sequence from the fixed top Dynamic Island on app open
+    LaunchedEffect(Unit) {
+        viewModel.triggerAppOpenUnlock()
+    }
 
     // Handle Android system back gesture to navigate back to Home if in another tab
     if (selectedTabIndex != 0) {
@@ -91,6 +105,7 @@ fun AuraApp(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(AuraBackground)) {
+        // Main Application Scaffolding
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = AuraBackground,
@@ -164,17 +179,30 @@ fun AuraApp(
                         )
                     }
                 }
-
-                // iPhone-style Dynamic Island pill near camera
-                if (isDynamicIslandEnabled) {
-                    DynamicIslandBar(
-                        viewModel = viewModel,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 4.dp)
-                    )
-                }
             }
+        }
+
+        // Lock Screen Curtain Overlay (shown until Face ID finishes authenticating on app start / lock)
+        AnimatedVisibility(
+            visible = !isAppUnlocked,
+            enter = fadeIn(animationSpec = tween(250)),
+            exit = fadeOut(animationSpec = tween(400))
+        ) {
+            LockScreenOverlay(
+                scanState = scanState,
+                onTapScreen = { viewModel.triggerAppOpenUnlock() }
+            )
+        }
+
+        // Main Fixed Top-Center Dynamic Island (Permanently fixed in status bar / camera notch apex)
+        if (isDynamicIslandEnabled) {
+            DynamicIslandBar(
+                viewModel = viewModel,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 4.dp)
+            )
         }
 
         // Full Screen Scan Simulation Overlay

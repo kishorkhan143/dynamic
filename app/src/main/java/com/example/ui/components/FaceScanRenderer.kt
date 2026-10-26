@@ -243,33 +243,33 @@ fun FaceScanRenderer(
 
             // Calculate live center & face bounds if detected by real-time ML Kit
             val isLiveDetected = realtimeFaceData.isFaceDetected && realtimeFaceData.faceBounds != null
-            val liveBounds = realtimeFaceData.faceBounds
+            val liveBounds = if (isLiveDetected) realtimeFaceData.faceBounds else null
 
-            val cx = if (isLiveDetected && liveBounds != null) {
+            val cx = if (liveBounds != null) {
                 ((liveBounds.left + liveBounds.right) / 2f) * w
             } else {
                 w / 2f
             }
 
-            val cy = if (isLiveDetected && liveBounds != null) {
+            val cy = if (liveBounds != null) {
                 ((liveBounds.top + liveBounds.bottom) / 2f) * h
             } else {
                 h / 2f
             }
 
-            val liveFaceW = if (isLiveDetected && liveBounds != null) {
+            val liveFaceW = if (liveBounds != null) {
                 ((liveBounds.right - liveBounds.left) * w).coerceIn(w * 0.28f, w * 0.85f)
             } else {
                 w * 0.44f
             }
 
-            val liveFaceH = if (isLiveDetected && liveBounds != null) {
+            val liveFaceH = if (liveBounds != null) {
                 ((liveBounds.bottom - liveBounds.top) * h).coerceIn(h * 0.28f, h * 0.85f)
             } else {
                 h * 0.48f
             }
 
-            val scanY = if (isLiveDetected && liveBounds != null) {
+            val scanY = if (liveBounds != null) {
                 val top = liveBounds.top * h
                 val span = (liveBounds.bottom - liveBounds.top) * h
                 top + primaryScanPhase.value * span

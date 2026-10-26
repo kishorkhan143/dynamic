@@ -82,4 +82,20 @@ class ExampleRobolectricTest {
     assertEquals(1.0f, viewModel.scanProgress.value)
     assertTrue(viewModel.isDynamicIslandExpanded.value)
   }
+
+  @Test
+  fun `verify app unlock state and scan triggers operate from main top dynamic island`() {
+    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
+
+    // Initially locked before authentication completes
+    org.junit.Assert.assertFalse(viewModel.isAppUnlocked.value)
+    assertEquals(com.example.model.ScanState.IDLE, viewModel.scanState.value)
+    assertTrue(viewModel.isDynamicIslandEnabled.value)
+
+    // Trigger simulation
+    viewModel.startScanSimulation()
+    assertEquals(com.example.model.ScanState.SCANNING, viewModel.scanState.value)
+    assertTrue(viewModel.isDynamicIslandExpanded.value)
+  }
 }

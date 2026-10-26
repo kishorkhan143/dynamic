@@ -297,13 +297,82 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Dynamic Island Sensor Indicator Card
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF0C111A))
+                .border(1.dp, AuraBorder, RoundedCornerShape(16.dp))
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (scanState == ScanState.SUCCESS) AuraSuccess.copy(alpha = 0.2f)
+                            else if (scanState == ScanState.SCANNING) AuraElectricAqua.copy(alpha = 0.2f)
+                            else Color(0xFF161E2C)
+                        )
+                        .border(
+                            1.dp,
+                            if (scanState == ScanState.SUCCESS) AuraSuccess
+                            else if (scanState == ScanState.SCANNING) AuraElectricAqua
+                            else AuraBorder,
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (scanState == ScanState.SUCCESS) Icons.Default.CheckCircle
+                        else Icons.Default.Security,
+                        contentDescription = null,
+                        tint = if (scanState == ScanState.SUCCESS) AuraSuccess
+                        else if (scanState == ScanState.SCANNING) AuraElectricAqua
+                        else AuraTextMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "FIXED TOP SENSOR // DYNAMIC ISLAND",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AuraTextPrimary,
+                        letterSpacing = 0.8.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (scanState == ScanState.SCANNING) "SCANNING ACTIVE AT TOP NOTCH..."
+                        else if (scanState == ScanState.SUCCESS) "AUTHENTICATION VERIFIED ✓"
+                        else "Tap the top camera island or buttons below to trigger Face ID",
+                        fontSize = 11.sp,
+                        color = if (scanState == ScanState.SCANNING) AuraElectricAqua
+                        else if (scanState == ScanState.SUCCESS) AuraSuccess
+                        else AuraTextSecondary
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Primary Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(
-                onClick = { viewModel.openFullScreenPreview() },
+                onClick = { viewModel.startScanSimulation() },
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp)
@@ -323,32 +392,37 @@ fun HomeScreen(
                 Text(
                     text = "RUN SCAN DEMO",
                     fontFamily = OrbitronFontFamily,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp
+                    letterSpacing = 0.6.sp
                 )
             }
 
-            OutlinedButton(
-                onClick = onNavigateToAnimations,
+            Button(
+                onClick = { viewModel.lockAndAuthenticate() },
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp)
-                    .testTag("browse_animations_button"),
+                    .testTag("lock_and_unlock_flow_button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF141A26),
+                    contentColor = AuraTextPrimary
+                ),
                 shape = RoundedCornerShape(14.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, AuraBorderBright)
             ) {
                 Icon(
-                    imageVector = Icons.Default.AutoAwesome,
+                    imageVector = Icons.Default.Security,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = AuraTextPrimary
+                    tint = AuraElectricAqua
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "BROWSE 8 PRESETS",
+                    text = "LOCK & AUTH FLOW",
                     fontFamily = OrbitronFontFamily,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
                     color = AuraTextPrimary,
                     letterSpacing = 0.5.sp
                 )

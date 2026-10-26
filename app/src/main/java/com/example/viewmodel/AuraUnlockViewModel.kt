@@ -47,6 +47,9 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
     private val _showFullScreenPreview = MutableStateFlow(false)
     val showFullScreenPreview: StateFlow<Boolean> = _showFullScreenPreview.asStateFlow()
 
+    private val _isAppUnlocked = MutableStateFlow(false)
+    val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
+
     private val _isDynamicIslandExpanded = MutableStateFlow(false)
     val isDynamicIslandExpanded: StateFlow<Boolean> = _isDynamicIslandExpanded.asStateFlow()
 
@@ -174,6 +177,41 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun triggerAppOpenUnlock() {
+        scanSimulationJob?.cancel()
+        scanSimulationJob = viewModelScope.launch {
+            _isAppUnlocked.value = false
+            _isDynamicIslandExpanded.value = true
+            _scanState.value = ScanState.SCANNING
+            _scanProgress.value = 0f
+
+            val totalSteps = 28
+            val stepDelay = 35L
+
+            for (i in 1..totalSteps) {
+                delay(stepDelay)
+                _scanProgress.value = (i.toFloat() / totalSteps)
+            }
+
+            // Morph into green checkmark
+            _scanState.value = ScanState.SUCCESS
+            delay(750)
+
+            // Unlock the application now that animation completed
+            _isAppUnlocked.value = true
+
+            // Smoothly retract the dynamic island
+            delay(500)
+            _scanState.value = ScanState.IDLE
+            _scanProgress.value = 0f
+            _isDynamicIslandExpanded.value = false
+        }
+    }
+
+    fun lockAndAuthenticate() {
+        triggerAppOpenUnlock()
+    }
+
     fun startScanSimulation() {
         scanSimulationJob?.cancel()
         scanSimulationJob = viewModelScope.launch {
@@ -183,8 +221,8 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
             _scanState.value = ScanState.SCANNING
             _scanProgress.value = 0f
 
-            val totalSteps = 40
-            val stepDelay = (2000L / totalSteps)
+            val totalSteps = 28
+            val stepDelay = 35L
 
             for (i in 1..totalSteps) {
                 delay(stepDelay)
@@ -192,7 +230,7 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             _scanState.value = ScanState.SUCCESS
-            delay(1200)
+            delay(850)
             _scanState.value = ScanState.IDLE
             _scanProgress.value = 0f
             _isDynamicIslandExpanded.value = false
@@ -208,13 +246,13 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
             _scanState.value = ScanState.SCANNING
             _scanProgress.value = 0f
 
-            for (i in 1..20) {
-                delay(40)
-                _scanProgress.value = (i.toFloat() / 40)
+            for (i in 1..16) {
+                delay(35)
+                _scanProgress.value = (i.toFloat() / 28)
             }
 
             _scanState.value = ScanState.RETRY
-            delay(1500)
+            delay(1200)
             _scanState.value = ScanState.IDLE
             _scanProgress.value = 0f
             _isDynamicIslandExpanded.value = false

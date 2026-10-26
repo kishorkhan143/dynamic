@@ -180,7 +180,7 @@ fun AnimationsScreen(
                         },
                         onRunDemo = {
                             viewModel.selectPreset(preset)
-                            viewModel.openFullScreenPreview()
+                            viewModel.startScanSimulation()
                         }
                     )
                 }

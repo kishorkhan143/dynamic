@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.model.ScanState
@@ -65,6 +67,13 @@ fun DynamicIslandBar(
 ) {
     val scanState by viewModel.scanState.collectAsState()
     val isEnabled by viewModel.isDynamicIslandEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
+
+    LaunchedEffect(scanState) {
+        if (scanState == ScanState.SUCCESS) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
 
     if (!isEnabled) return
 
@@ -120,6 +129,8 @@ fun DynamicIslandBar(
         }
     }
 
+    val isAppUnlocked by viewModel.isAppUnlocked.collectAsState()
+
     Box(
         modifier = modifier.testTag("dynamic_island_container"),
         contentAlignment = Alignment.TopCenter
@@ -145,9 +156,13 @@ fun DynamicIslandBar(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {
-                    // Tapping the resting pill triggers the face scan simulation
+                    // Tapping the resting island triggers the Face ID scan animation
                     if (scanState == ScanState.IDLE) {
-                        viewModel.startScanSimulation()
+                        if (!isAppUnlocked) {
+                            viewModel.triggerAppOpenUnlock()
+                        } else {
+                            viewModel.startScanSimulation()
+                        }
                     }
                 }
                 .padding(if (isScanningOrSuccess) 12.dp else 6.dp),
