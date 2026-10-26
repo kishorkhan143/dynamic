@@ -1,0 +1,6 @@
+{
+  "name": "Aura Unlock",
+  "description": "Futuristic face scan animation suite and customization studio with cyber biometric HUD effects and live preview",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
