@@ -1,6 +1,6 @@
 {
-  "summary":  "Architecture and design plan for anchoring all Face ID biometric unlock animations to a single, fixed top-center Dynamic Island notch, featuring app-opening Face ID authentication flow and synchronized in-app triggers.",
-  "updatedAt":  "2026-10-26T10:07:18.421997732Z",
+  "summary":  "Implementation plan to remove the in-app Dynamic Island composable and convert the floating system overlay into an always-on, persistent top-center Dynamic Island across all screens, lock/unlock events, and apps.",
+  "updatedAt":  "2026-10-26T11:34:01.353072892Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

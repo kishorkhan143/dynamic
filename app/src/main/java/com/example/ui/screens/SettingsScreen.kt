@@ -1,8 +1,15 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,31 +33,30 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
-import androidx.core.content.ContextCompat
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.ui.platform.LocalContext
-import com.example.service.DynamicIslandOverlayService
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,13 +65,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.model.BackgroundMode
-import com.example.model.PresetCatalog
+import com.example.service.AppOpenAccessibilityService
+import com.example.service.DynamicIslandOverlayService
+import com.example.service.OverlayTrigger
+import com.example.service.getIslandBackgroundColor
 import com.example.ui.theme.AuraBackground
 import com.example.ui.theme.AuraBorder
 import com.example.ui.theme.AuraElectricAqua
@@ -78,6 +94,7 @@ import com.example.ui.theme.AuraTextSecondary
 import com.example.ui.theme.AuraWarning
 import com.example.ui.theme.OrbitronFontFamily
 import com.example.viewmodel.AuraUnlockViewModel
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -85,6 +102,12 @@ fun SettingsScreen(
 ) {
     val studioConfig by viewModel.studioConfig.collectAsState()
     val hasCameraPermission by viewModel.hasCameraPermission.collectAsState()
+    val islandDarkness by viewModel.islandDarkness.collectAsState()
+    val animationVelocity by viewModel.animationVelocity.collectAsState()
+    val islandOffsetY by viewModel.islandOffsetY.collectAsState()
+    val islandOffsetX by viewModel.islandOffsetX.collectAsState()
+    val islandScale by viewModel.islandScale.collectAsState()
+    val greenLightEnabled by viewModel.greenLightEnabled.collectAsState()
     var showResetDialog by remember { mutableStateOf(false) }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -96,9 +119,27 @@ fun SettingsScreen(
         }
     }
 
-    val isDynamicIslandEnabled by viewModel.isDynamicIslandEnabled.collectAsState()
     val context = LocalContext.current
-    var isOverlayRunning by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isOverlayRunning by remember { mutableStateOf(DynamicIslandOverlayService.isRunning) }
+    var canDrawOverlays by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var isAccessibilityEnabled by remember { mutableStateOf(AppOpenAccessibilityService.isEnabled(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canDrawOverlays = Settings.canDrawOverlays(context)
+                isAccessibilityEnabled = AppOpenAccessibilityService.isEnabled(context)
+                isOverlayRunning = DynamicIslandOverlayService.isRunning
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val scrollState = rememberScrollState()
 
     var hasNotificationPermission by remember {
@@ -114,8 +155,6 @@ fun SettingsScreen(
     ) { isGranted ->
         hasNotificationPermission = isGranted
     }
-
-    val canDrawOverlays = Settings.canDrawOverlays(context)
 
     Column(
         modifier = Modifier
@@ -150,7 +189,7 @@ fun SettingsScreen(
                 PermissionStatusItem(
                     icon = Icons.Default.Visibility,
                     title = "Display Over Other Apps (Overlay)",
-                    desc = "Required to float the Dynamic Island camera notch pill across all apps.",
+                    desc = "Required to render the Dynamic Island biometric pill at the top camera notch across all applications.",
                     isGranted = canDrawOverlays,
                     actionLabel = if (canDrawOverlays) "GRANTED" else "GRANT IN SETTINGS",
                     onAction = {
@@ -162,7 +201,20 @@ fun SettingsScreen(
                     }
                 )
 
-                // 2. Notification Permission (Background Service)
+                // 2. App-Open Detection (Accessibility Service)
+                PermissionStatusItem(
+                    icon = Icons.Default.TouchApp,
+                    title = "App-Open Detection (Accessibility)",
+                    desc = "Detects when any third-party app is launched to automatically trigger the Face ID animation from the top notch island, then return into the island.",
+                    isGranted = isAccessibilityEnabled,
+                    actionLabel = if (isAccessibilityEnabled) "ACTIVE" else "ENABLE IN SETTINGS",
+                    onAction = {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                )
+
+                // 3. Notification Permission (Background Service)
                 PermissionStatusItem(
                     icon = Icons.Default.Notifications,
                     title = "Background Notification Service",
@@ -176,11 +228,11 @@ fun SettingsScreen(
                     }
                 )
 
-                // 3. Camera Sensor Permission
+                // 4. Camera Sensor Permission
                 PermissionStatusItem(
                     icon = Icons.Default.CameraAlt,
                     title = "Front Optical Camera",
-                    desc = "Powers live camera view and real-time facial feature landmark detection.",
+                    desc = "Powers in-app live camera preview and facial landmark detection. Never used in background overlays.",
                     isGranted = hasCameraPermission,
                     actionLabel = if (hasCameraPermission) "GRANTED" else "ALLOW CAMERA",
                     onAction = {
@@ -188,13 +240,13 @@ fun SettingsScreen(
                     }
                 )
 
-                // 4. Biometric Hardware Authentication Trigger
+                // 5. Biometric Hardware Authentication Trigger
                 PermissionStatusItem(
                     icon = Icons.Default.Security,
-                    title = "Biometric Hardware Verification",
-                    desc = "Test hardware biometric authentication and trigger the Dynamic Island animation.",
+                    title = "In-App Biometric Verification",
+                    desc = "Test the biometric simulation and trigger the Dynamic Island expand animation.",
                     isGranted = true,
-                    actionLabel = "TEST FACE ID",
+                    actionLabel = "TEST SCAN",
                     onAction = {
                         viewModel.startScanSimulation()
                     }
@@ -204,10 +256,11 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Dynamic Island Setting Card
-        SettingGroupCard(title = "CAMERA CUTOUT DISPLAY") {
+        // Dynamic Island & Face ID Customization Card
+        // Dynamic Island & Face ID Customization Card
+        SettingGroupCard(title = "DYNAMIC ISLAND & FACE ID CONTROLS") {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // In-App Permanent Dynamic Island
+                // 1. Always-On Top Center Camera Dynamic Island Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -215,47 +268,15 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Always Present In-App",
+                            text = "Always-On Camera Cutout Island",
                             fontFamily = OrbitronFontFamily,
                             fontSize = 13.sp,
                             color = AuraTextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Permanent top-center black capsule; expands to Face ID square on scan",
-                            fontSize = 11.sp,
-                            color = AuraTextSecondary
-                        )
-                    }
-                    Switch(
-                        checked = isDynamicIslandEnabled,
-                        onCheckedChange = { viewModel.setDynamicIslandEnabled(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF003733),
-                            checkedTrackColor = AuraElectricAqua,
-                            uncheckedThumbColor = AuraTextMuted,
-                            uncheckedTrackColor = Color(0xFF1B2230)
-                        )
-                    )
-                }
-
-                // System-Wide Floating Island (When App Is Closed / Outside App)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Float On Screen When App Closed",
-                            fontFamily = OrbitronFontFamily,
-                            fontSize = 13.sp,
-                            color = AuraTextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (Settings.canDrawOverlays(context)) {
-                                if (isOverlayRunning) "Overlay active at top of screen" else "Enable to float pill over other apps"
+                            text = if (canDrawOverlays) {
+                                if (isOverlayRunning) "Active — Always visible at top camera; stays alive on app close or recent task swipe" else "Enable to keep Dynamic Island at top center camera 24/7"
                             } else {
                                 "Requires Android 'Display over other apps' permission"
                             },
@@ -290,6 +311,653 @@ fun SettingsScreen(
                         )
                     )
                 }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 2. Dynamic Island Position Adjustment (Vertical Y & Horizontal X)
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = AuraElectricAqua,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "POSITION ADJUSTMENT (TOP & CENTER)",
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AuraTextPrimary
+                            )
+                        }
+                        Text(
+                            text = "Y: ${islandOffsetY}dp • X: ${islandOffsetX}dp",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AuraElectricAqua
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Vertical Distance from Top Screen Edge (Y): ${islandOffsetY} dp",
+                        fontSize = 11.sp,
+                        color = AuraTextSecondary
+                    )
+                    Slider(
+                        value = islandOffsetY.toFloat(),
+                        onValueChange = { viewModel.updateIslandOffsetY(it.toInt()) },
+                        valueRange = 0f..60f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("island_position_y_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuraElectricAqua,
+                            activeTrackColor = AuraElectricAqua,
+                            inactiveTrackColor = Color(0xFF222B3A)
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TonePresetChip(
+                            label = "0dp Top",
+                            isSelected = islandOffsetY == 0,
+                            onClick = { viewModel.updateIslandOffsetY(0) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "12dp Default",
+                            isSelected = islandOffsetY == 12,
+                            onClick = { viewModel.updateIslandOffsetY(12) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "24dp Mid",
+                            isSelected = islandOffsetY == 24,
+                            onClick = { viewModel.updateIslandOffsetY(24) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "40dp Low",
+                            isSelected = islandOffsetY == 40,
+                            onClick = { viewModel.updateIslandOffsetY(40) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Horizontal Offset (X): ${if (islandOffsetX > 0) "+$islandOffsetX" else "$islandOffsetX"} dp",
+                        fontSize = 11.sp,
+                        color = AuraTextSecondary
+                    )
+                    Slider(
+                        value = islandOffsetX.toFloat(),
+                        onValueChange = { viewModel.updateIslandOffsetX(it.toInt()) },
+                        valueRange = -50f..50f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("island_position_x_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuraElectricAqua,
+                            activeTrackColor = AuraElectricAqua,
+                            inactiveTrackColor = Color(0xFF222B3A)
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TonePresetChip(
+                            label = "-25dp Left",
+                            isSelected = islandOffsetX == -25,
+                            onClick = { viewModel.updateIslandOffsetX(-25) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "0dp Centered",
+                            isSelected = islandOffsetX == 0,
+                            onClick = { viewModel.updateIslandOffsetX(0) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "+25dp Right",
+                            isSelected = islandOffsetX == 25,
+                            onClick = { viewModel.updateIslandOffsetX(25) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 3. Dynamic Island Size Reduction & Scaling Control
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = AuraElectricAqua,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "ISLAND SIZE (REDUCE / EXPAND)",
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AuraTextPrimary
+                            )
+                        }
+
+                        val sizePct = (islandScale * 100).toInt()
+                        Text(
+                            text = "$sizePct% • ${(160 * islandScale).toInt()}x${(36 * islandScale).toInt()}dp",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AuraElectricAqua
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Slide to shrink and reduce the capsule size to match small camera pinholes",
+                        fontSize = 11.sp,
+                        color = AuraTextSecondary
+                    )
+
+                    Slider(
+                        value = islandScale,
+                        onValueChange = { viewModel.updateIslandScale(it) },
+                        valueRange = 0.50f..1.30f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("island_size_scale_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuraElectricAqua,
+                            activeTrackColor = AuraElectricAqua,
+                            inactiveTrackColor = Color(0xFF222B3A)
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TonePresetChip(
+                            label = "60% Mini",
+                            isSelected = (islandScale - 0.60f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateIslandScale(0.60f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "80% Compact",
+                            isSelected = (islandScale - 0.80f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateIslandScale(0.80f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "100% Normal",
+                            isSelected = (islandScale - 1.0f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateIslandScale(1.0f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "120% Large",
+                            isSelected = (islandScale - 1.20f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateIslandScale(1.20f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 4. Island Tone: Darker or Lighter Control (with pure OLED pitch black)
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = null,
+                                tint = AuraElectricAqua,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "ISLAND TONE (DARKER / LIGHTER)",
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AuraTextPrimary
+                            )
+                        }
+
+                        val toneDescription = when {
+                            islandDarkness >= 0.85f -> "Pitch Black OLED"
+                            islandDarkness >= 0.55f -> "Deep Charcoal"
+                            islandDarkness >= 0.25f -> "Frosted Slate"
+                            else -> "Lighter Titanium"
+                        }
+                        Text(
+                            text = "${(islandDarkness * 100).toInt()}% • $toneDescription",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AuraElectricAqua
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Live Interactive Mini Preview Capsule
+                    val previewBg = getIslandBackgroundColor(islandDarkness)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF080C12))
+                            .border(1.dp, Color(0xFF161F2E), RoundedCornerShape(12.dp))
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val previewWidth = (120 * islandScale).coerceIn(60f, 160f).dp
+                        val previewHeight = (28 * islandScale).coerceIn(16f, 38f).dp
+                        Box(
+                            modifier = Modifier
+                                .width(previewWidth)
+                                .height(previewHeight)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(previewBg)
+                                .border(
+                                    width = if (islandDarkness >= 0.70f) 0.8.dp else 1.dp,
+                                    color = if (islandDarkness >= 0.70f) Color(0xFF222936) else if (islandDarkness < 0.45f) Color(0x66FFFFFF) else Color(0x6635F5E5),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Face glyph preview
+                                Canvas(modifier = Modifier.size(12.dp)) {
+                                    val col = if (islandDarkness < 0.45f) Color.White else Color(0xFFB4BFCE)
+                                    val b = 3f
+                                    drawLine(col, Offset(0f, 0f), Offset(b, 0f), 1.2f)
+                                    drawLine(col, Offset(0f, 0f), Offset(0f, b), 1.2f)
+                                    drawLine(col, Offset(size.width, 0f), Offset(size.width - b, 0f), 1.2f)
+                                    drawLine(col, Offset(size.width, 0f), Offset(size.width, b), 1.2f)
+                                    drawLine(col, Offset(0f, size.height), Offset(b, size.height), 1.2f)
+                                    drawLine(col, Offset(0f, size.height), Offset(0f, size.height - b), 1.2f)
+                                    drawLine(col, Offset(size.width, size.height), Offset(size.width - b, size.height), 1.2f)
+                                    drawLine(col, Offset(size.width, size.height), Offset(size.width, size.height - b), 1.2f)
+                                }
+
+                                // Center micro accent: Clean stealth dark bar (no green in center)
+                                Box(
+                                    modifier = Modifier
+                                        .width(18.dp)
+                                        .height(2.dp)
+                                        .clip(CircleShape)
+                                        .background(if (islandDarkness >= 0.70f) Color(0xFF141923) else Color(0xFF222B3A))
+                                )
+
+                                // Right-hand side: Green color privacy dot + Camera optic lens
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (greenLightEnabled) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF00E676))
+                                                .border(0.6.dp, Color(0xFF69F0AE), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(2.5.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFE8FFF0))
+                                            )
+                                        }
+                                    }
+
+                                    // Camera lens optic - pure deep dark
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF080C13))
+                                            .border(0.8.dp, if (islandDarkness < 0.45f) Color(0xFF334155) else Color(0xFF1A2230), CircleShape)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Slider(
+                        value = islandDarkness,
+                        onValueChange = { viewModel.updateIslandDarkness(it) },
+                        valueRange = 0.0f..1.0f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("island_darkness_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuraElectricAqua,
+                            activeTrackColor = AuraElectricAqua,
+                            inactiveTrackColor = Color(0xFF222B3A)
+                        )
+                    )
+
+                    // Quick Tone Preset Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TonePresetChip(
+                            label = "Lighter (0%)",
+                            isSelected = islandDarkness <= 0.05f,
+                            onClick = { viewModel.updateIslandDarkness(0.0f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "Slate (35%)",
+                            isSelected = islandDarkness in 0.25f..0.45f,
+                            onClick = { viewModel.updateIslandDarkness(0.35f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "Charcoal (70%)",
+                            isSelected = islandDarkness in 0.60f..0.80f,
+                            onClick = { viewModel.updateIslandDarkness(0.70f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "Pitch Black (100%)",
+                            isSelected = islandDarkness >= 0.95f,
+                            onClick = { viewModel.updateIslandDarkness(1.0f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 5. Green Color Light Indicator Control
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Green Privacy Indicator Light",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 13.sp,
+                            color = AuraTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (greenLightEnabled) "ON — Green dot displays on right side of Dynamic Island" else "OFF — Zero green light on resting island (Clean Stealth Notch)",
+                            fontSize = 11.sp,
+                            color = if (greenLightEnabled) AuraSuccess else AuraTextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = greenLightEnabled,
+                        onCheckedChange = { viewModel.updateGreenLightEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF003733),
+                            checkedTrackColor = AuraSuccess,
+                            uncheckedThumbColor = AuraTextMuted,
+                            uncheckedTrackColor = Color(0xFF1B2230)
+                        )
+                    )
+                }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 6. Face ID Animation Velocity Control
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = AuraElectricAqua,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "FACE ID ANIMATION VELOCITY",
+                                fontFamily = OrbitronFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AuraTextPrimary
+                            )
+                        }
+
+                        val speedDescription = when {
+                            animationVelocity <= 0.6f -> "Cinematic Slow"
+                            animationVelocity <= 1.1f -> "Standard"
+                            animationVelocity <= 1.6f -> "Snappy Fast"
+                            else -> "Ultra-Rapid"
+                        }
+                        Text(
+                            text = "${String.format(Locale.US, "%.1f", animationVelocity)}x • $speedDescription",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AuraElectricAqua
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Slider(
+                        value = animationVelocity,
+                        onValueChange = { viewModel.updateAnimationVelocity(it) },
+                        valueRange = 0.5f..2.5f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("animation_velocity_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuraElectricAqua,
+                            activeTrackColor = AuraElectricAqua,
+                            inactiveTrackColor = Color(0xFF222B3A)
+                        )
+                    )
+
+                    // Quick Velocity Preset Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TonePresetChip(
+                            label = "0.5x Slow",
+                            isSelected = (animationVelocity - 0.5f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateAnimationVelocity(0.5f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "1.0x Normal",
+                            isSelected = (animationVelocity - 1.0f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateAnimationVelocity(1.0f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "1.5x Fast",
+                            isSelected = (animationVelocity - 1.5f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateAnimationVelocity(1.5f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TonePresetChip(
+                            label = "2.0x Rapid",
+                            isSelected = (animationVelocity - 2.0f) in -0.05f..0.05f,
+                            onClick = { viewModel.updateAnimationVelocity(2.0f) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Divider
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(AuraBorder)
+                )
+
+                // 7. Preview System Overlay Button (Tests currently customized velocity, tone, position & size)
+                Button(
+                    onClick = {
+                        if (Settings.canDrawOverlays(context)) {
+                            if (!isOverlayRunning) {
+                                DynamicIslandOverlayService.startService(context)
+                                isOverlayRunning = true
+                            }
+                            OverlayTrigger.fire(OverlayTrigger.Source.MANUAL)
+                        } else {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(intent)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .testTag("preview_system_overlay_button"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF13222E),
+                        contentColor = AuraElectricAqua
+                    ),
+                    border = BorderStroke(1.dp, AuraElectricAqua.copy(alpha = 0.5f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = AuraElectricAqua,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "PREVIEW FACE ID ANIMATION",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    )
+                }
+
+                // Test App-Open Trigger Button
+                OutlinedButton(
+                    onClick = {
+                        if (Settings.canDrawOverlays(context)) {
+                            if (!isOverlayRunning) {
+                                DynamicIslandOverlayService.startService(context)
+                                isOverlayRunning = true
+                            }
+                            OverlayTrigger.fire(OverlayTrigger.Source.APP_OPENED)
+                        } else {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(intent)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                        .testTag("test_app_open_trigger_button"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AuraTextSecondary
+                    ),
+                    border = BorderStroke(1.dp, AuraBorder)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TouchApp,
+                        contentDescription = null,
+                        tint = AuraElectricAqua,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "SIMULATE APP-OPEN LAUNCH TRIGGER",
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp
+                    )
+                }
             }
         }
 
@@ -304,14 +972,14 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Live Front Camera Feed",
+                        text = "Live Front Camera Feed (In-App)",
                         fontFamily = OrbitronFontFamily,
                         fontSize = 13.sp,
                         color = AuraTextPrimary
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (hasCameraPermission) "Access granted // Optional overlay" else "Tap switch to request camera access",
+                        text = if (hasCameraPermission) "Access granted // Optional in-app feed" else "Tap switch to request camera access",
                         fontSize = 11.sp,
                         color = if (hasCameraPermission) AuraSuccess else AuraTextSecondary
                     )
@@ -367,12 +1035,17 @@ fun SettingsScreen(
                 PrivacyRow(
                     icon = Icons.Default.PrivacyTip,
                     title = "Strictly On-Device Processing",
-                    desc = "All animations run purely via GPU shaders on your device. Zero camera frames are saved, cached, or transmitted."
+                    desc = "All animations render locally via Jetpack Compose and GPU shaders on your device. Zero frames or telemetry are cached or transmitted."
                 )
                 PrivacyRow(
                     icon = Icons.Default.Security,
-                    title = "Visual Simulation Only",
-                    desc = "Aura Unlock is a futuristic visual animation studio. It does not perform actual facial biometric identification."
+                    title = "Visual Animation Only",
+                    desc = "Aura Unlock is a visual animation aesthetic suite. Android broadcasts a generic 'device unlocked' signal and does not reveal whether unlock occurred via Face, Fingerprint, or PIN. The animation does not verify or guarantee biometric identity."
+                )
+                PrivacyRow(
+                    icon = Icons.Default.CameraAlt,
+                    title = "Zero Background Camera Usage",
+                    desc = "Aura Unlock NEVER accesses or turns on camera hardware in the background or during system overlays. Camera sensors are only used when actively viewing the in-app camera mode."
                 )
                 PrivacyRow(
                     icon = Icons.Default.Lock,
@@ -385,111 +1058,159 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // OS Limitations & Feasibility Disclosure
-        SettingGroupCard(title = "ANDROID BIOMETRIC LIMITATIONS") {
+        SettingGroupCard(title = "ANDROID BIOMETRIC & OVERLAY LIMITS") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Why Aura Unlock operates in-app:",
+                    text = "Technical & Operating System Boundaries:",
                     fontFamily = OrbitronFontFamily,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = AuraTextPrimary
                 )
                 Text(
-                    text = "• Native Lock Screen Isolation: Android OS executes face-unlock authentication inside an isolated Trusted Execution Environment (TEE) hardware enclave. Standard third-party apps cannot hook into or replace native system lock-screen animations.\n\n• Device Security Protection: Aura Unlock strictly complies with Android security rules and never attempts to bypass lock-screens or tamper with system biometric prompts.\n\n• Floating Overlay Feasibility: While system-alert overlays can be drawn over normal apps with user permission, Android security deliberately blocks overlays from rendering over the secure lock screen.",
-                    fontSize = 12.sp,
+                    text = "1. Security Isolation: Android's secure keyguard prevents third-party overlays on the locked screen. The Face ID unlock animation displays immediately upon device unlock.",
+                    fontSize = 11.sp,
                     color = AuraTextSecondary,
-                    lineHeight = 17.sp
+                    lineHeight = 15.sp
+                )
+                Text(
+                    text = "2. System Face Authentication: Android OS biometrics are managed entirely by system services. Third-party apps cannot override the stock system authentication dialogs.",
+                    fontSize = 11.sp,
+                    color = AuraTextSecondary,
+                    lineHeight = 15.sp
+                )
+                Text(
+                    text = "3. Touch Passthrough: The persistent top-center Dynamic Island overlay uses system touch passthrough flags so it never blocks camera interactions, status bar icons, or underlying apps.",
+                    fontSize = 11.sp,
+                    color = AuraTextSecondary,
+                    lineHeight = 15.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Reset Settings Button
-        OutlinedButton(
-            onClick = { showResetDialog = true },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("reset_all_settings_button"),
-            shape = RoundedCornerShape(12.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, AuraError.copy(alpha = 0.6f))
-        ) {
-            Icon(
-                imageVector = Icons.Default.RestartAlt,
-                contentDescription = null,
-                tint = AuraError,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "RESET ALL PREFERENCES",
-                fontFamily = OrbitronFontFamily,
-                fontSize = 11.sp,
-                color = AuraError,
-                letterSpacing = 0.8.sp
-            )
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        // App Version
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "AURA UNLOCK // v1.0.0",
-                fontFamily = OrbitronFontFamily,
-                fontSize = 10.sp,
-                color = AuraTextMuted,
-                letterSpacing = 1.sp
-            )
-            Text(
-                text = "COMPOSE CANVAS ENGINE // HARDWARE ACCELERATED",
-                fontFamily = OrbitronFontFamily,
-                fontSize = 9.sp,
-                color = AuraTextMuted
-            )
+        // Application Diagnostics & Reset
+        SettingGroupCard(title = "DIAGNOSTICS & DEFAULTS") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Reset All Customizations",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 13.sp,
+                            color = AuraTextPrimary
+                        )
+                        Text(
+                            text = "Restores factory presets, island tone, and velocity",
+                            fontSize = 11.sp,
+                            color = AuraTextSecondary
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showResetDialog = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AuraError),
+                        border = BorderStroke(1.dp, AuraError.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("reset_all_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RestartAlt,
+                            contentDescription = null,
+                            tint = AuraError,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "RESET",
+                            fontFamily = OrbitronFontFamily,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
     }
 
+    // Reset Confirmation Dialog
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = {
                 Text(
-                    text = "RESET PREFERENCES?",
+                    text = "RESET ALL SETTINGS?",
                     fontFamily = OrbitronFontFamily,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
                     color = AuraTextPrimary
                 )
             },
             text = {
                 Text(
-                    text = "This will restore default animation speeds, colors, and clear favorites.",
-                    fontSize = 12.sp,
+                    text = "This will reset all animation parameters, island tone (to pitch black OLED), velocity (to 1.0x), and preset selections back to factory defaults.",
+                    fontSize = 13.sp,
                     color = AuraTextSecondary
                 )
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         viewModel.resetAllSettings()
                         showResetDialog = false
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AuraError,
+                        contentColor = Color.White
+                    )
                 ) {
-                    Text("RESET", fontFamily = OrbitronFontFamily, color = AuraError)
+                    Text("RESET")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("CANCEL", fontFamily = OrbitronFontFamily, color = AuraTextSecondary)
+                    Text("CANCEL", color = AuraTextMuted)
                 }
             },
-            containerColor = Color(0xFF141924)
+            containerColor = AuraSurfaceCard,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun TonePresetChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isSelected) Color(0xFF142E3B) else Color(0xFF141A25))
+            .border(
+                1.dp,
+                if (isSelected) AuraElectricAqua else Color(0xFF222B3B),
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontFamily = OrbitronFontFamily,
+            fontSize = 9.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = if (isSelected) AuraElectricAqua else AuraTextSecondary,
+            maxLines = 1
         )
     }
 }
@@ -502,20 +1223,21 @@ private fun SettingGroupCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(AuraSurfaceCard)
-            .border(1.dp, AuraBorder, RoundedCornerShape(18.dp))
+            .border(1.dp, AuraBorder, RoundedCornerShape(16.dp))
             .padding(16.dp)
     ) {
         Column {
             Text(
                 text = title,
                 fontFamily = OrbitronFontFamily,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
                 color = AuraElectricAqua,
                 letterSpacing = 1.sp
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             content()
         }
     }
@@ -608,7 +1330,7 @@ private fun PermissionStatusItem(
                 contentColor = if (isGranted) AuraSuccess else AuraElectricAqua
             ),
             shape = RoundedCornerShape(8.dp),
-            border = androidx.compose.foundation.BorderStroke(
+            border = BorderStroke(
                 1.dp,
                 if (isGranted) AuraSuccess.copy(alpha = 0.4f) else AuraElectricAqua.copy(alpha = 0.4f)
             ),

@@ -40,12 +40,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.statusBarsPadding
-import com.example.ui.components.DynamicIslandBar
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.service.DynamicIslandOverlayService
+import com.example.service.OverlayTrigger
 import com.example.ui.components.FullScreenPreviewDialog
 import com.example.ui.components.LockScreenOverlay
 import com.example.ui.screens.AnimationsScreen
@@ -85,6 +92,9 @@ class MainActivity : ComponentActivity() {
 fun AuraApp(
     viewModel: AuraUnlockViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val showFullScreenPreview by viewModel.showFullScreenPreview.collectAsState()
     val isDynamicIslandEnabled by viewModel.isDynamicIslandEnabled.collectAsState()
@@ -92,9 +102,28 @@ fun AuraApp(
     val scanState by viewModel.scanState.collectAsState()
     val studioConfig by viewModel.studioConfig.collectAsState()
 
-    // Automatically execute Face ID unlock sequence from the fixed top Dynamic Island on app open
+    // Automatically ensure system overlay service is active at the top camera center
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (Settings.canDrawOverlays(context)) {
+                    DynamicIslandOverlayService.startService(context)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Automatically execute Face ID unlock sequence on app open and animate top-center overlay
     LaunchedEffect(Unit) {
+        if (Settings.canDrawOverlays(context)) {
+            DynamicIslandOverlayService.startService(context)
+        }
         viewModel.triggerAppOpenUnlock()
+        OverlayTrigger.fire(OverlayTrigger.Source.APP_OPENED)
     }
 
     // Handle Android system back gesture to navigate back to Home if in another tab
@@ -190,18 +219,10 @@ fun AuraApp(
         ) {
             LockScreenOverlay(
                 scanState = scanState,
-                onTapScreen = { viewModel.triggerAppOpenUnlock() }
-            )
-        }
-
-        // Main Fixed Top-Center Dynamic Island (Permanently fixed in status bar / camera notch apex)
-        if (isDynamicIslandEnabled) {
-            DynamicIslandBar(
-                viewModel = viewModel,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 4.dp)
+                onTapScreen = {
+                    viewModel.triggerAppOpenUnlock()
+                    OverlayTrigger.fire(OverlayTrigger.Source.APP_OPENED)
+                }
             )
         }
 

@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.SettingsRepository
 import com.example.model.PresetCatalog
+import com.example.service.AppOpenAccessibilityService
+import com.example.service.OverlayTrigger
+import com.example.service.getIslandBackgroundColor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +54,40 @@ class ExampleRobolectricTest {
   }
 
   @Test
+  fun `verify island darkness and animation velocity customization and overlay sync`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = SettingsRepository(context)
+    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
+
+    // Default values
+    assertEquals(1.0f, repo.getIslandDarkness(), 0.01f)
+    assertEquals(1.0f, repo.getAnimationVelocity(), 0.01f)
+
+    // Update island tone (lighter)
+    viewModel.updateIslandDarkness(0.35f)
+    assertEquals(0.35f, viewModel.islandDarkness.value, 0.01f)
+    assertEquals(0.35f, repo.getIslandDarkness(), 0.01f)
+    assertEquals(0.35f, OverlayTrigger.islandDarkness.value, 0.01f)
+
+    // Update velocity
+    viewModel.updateAnimationVelocity(1.8f)
+    assertEquals(1.8f, viewModel.animationVelocity.value, 0.01f)
+    assertEquals(1.8f, repo.getAnimationVelocity(), 0.01f)
+    assertEquals(1.8f, OverlayTrigger.animationVelocity.value, 0.01f)
+
+    // Verify background color helper calculation
+    val lightBg = getIslandBackgroundColor(0.0f)
+    assertTrue(lightBg.alpha in 0.89f..0.91f)
+
+    val darkBg = getIslandBackgroundColor(1.0f)
+    assertEquals(1.0f, darkBg.alpha, 0.01f)
+    assertEquals(0f, darkBg.red, 0.01f)
+    assertEquals(0f, darkBg.green, 0.01f)
+    assertEquals(0f, darkBg.blue, 0.01f)
+  }
+
+  @Test
   fun `verify realtime face recognition synchronizes with scan state and dynamic island`() {
     val application = ApplicationProvider.getApplicationContext<android.app.Application>()
     val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
@@ -89,7 +127,7 @@ class ExampleRobolectricTest {
     val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
 
     // Initially locked before authentication completes
-    org.junit.Assert.assertFalse(viewModel.isAppUnlocked.value)
+    assertFalse(viewModel.isAppUnlocked.value)
     assertEquals(com.example.model.ScanState.IDLE, viewModel.scanState.value)
     assertTrue(viewModel.isDynamicIslandEnabled.value)
 
@@ -97,5 +135,56 @@ class ExampleRobolectricTest {
     viewModel.startScanSimulation()
     assertEquals(com.example.model.ScanState.SCANNING, viewModel.scanState.value)
     assertTrue(viewModel.isDynamicIslandExpanded.value)
+  }
+
+  @Test
+  fun `verify island position Y and X offset customization and synchronization`() {
+    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
+    val repo = SettingsRepository(application.applicationContext)
+
+    // Default position: Y=12dp (notch offset), X=0dp (centered)
+    assertEquals(12, repo.getIslandOffsetY())
+    assertEquals(0, repo.getIslandOffsetX())
+
+    // Update position
+    viewModel.updateIslandOffsetY(24)
+    viewModel.updateIslandOffsetX(-15)
+
+    assertEquals(24, viewModel.islandOffsetY.value)
+    assertEquals(-15, viewModel.islandOffsetX.value)
+    assertEquals(24, repo.getIslandOffsetY())
+    assertEquals(-15, repo.getIslandOffsetX())
+    assertEquals(24, OverlayTrigger.islandOffsetY.value)
+    assertEquals(-15, OverlayTrigger.islandOffsetX.value)
+  }
+
+  @Test
+  fun `verify island size reduction scale and green light indicator toggle`() {
+    val application = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val viewModel = com.example.viewmodel.AuraUnlockViewModel(application)
+    val repo = SettingsRepository(application.applicationContext)
+
+    // Default scale: 1.0f (100%), green light: false (off when resting)
+    assertEquals(1.0f, repo.getIslandScale(), 0.01f)
+    assertFalse(repo.getGreenLightEnabled())
+    assertFalse(OverlayTrigger.greenLightEnabled.value)
+
+    // Reduce island size to 60% (mini compact for small pinhole camera notches)
+    viewModel.updateIslandScale(0.60f)
+    assertEquals(0.60f, viewModel.islandScale.value, 0.01f)
+    assertEquals(0.60f, repo.getIslandScale(), 0.01f)
+    assertEquals(0.60f, OverlayTrigger.islandScale.value, 0.01f)
+
+    // Toggle green light on and off
+    viewModel.updateGreenLightEnabled(true)
+    assertTrue(viewModel.greenLightEnabled.value)
+    assertTrue(repo.getGreenLightEnabled())
+    assertTrue(OverlayTrigger.greenLightEnabled.value)
+
+    viewModel.updateGreenLightEnabled(false)
+    assertFalse(viewModel.greenLightEnabled.value)
+    assertFalse(repo.getGreenLightEnabled())
+    assertFalse(OverlayTrigger.greenLightEnabled.value)
   }
 }

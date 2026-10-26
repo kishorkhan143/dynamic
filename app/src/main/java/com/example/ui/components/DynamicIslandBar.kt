@@ -67,6 +67,9 @@ fun DynamicIslandBar(
 ) {
     val scanState by viewModel.scanState.collectAsState()
     val isEnabled by viewModel.isDynamicIslandEnabled.collectAsState()
+    val islandDarkness by viewModel.islandDarkness.collectAsState()
+    val animationVelocity by viewModel.animationVelocity.collectAsState()
+    val speedScale = animationVelocity.coerceIn(0.5f, 3.0f)
     val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(scanState) {
@@ -82,35 +85,44 @@ fun DynamicIslandBar(
     // Dynamic Island is always present at top center!
     // Resting: elongated 160x36dp iPhone-style camera notch capsule with luminous light rim
     // Active Face ID: expands with bouncy iOS spring physics to 84x84dp square
+    val islandScale by viewModel.islandScale.collectAsState()
+    val greenLightEnabled by viewModel.greenLightEnabled.collectAsState()
+    val s = islandScale.coerceIn(0.5f, 1.4f)
+
+    val targetWidth = if (isScanningOrSuccess) 84.dp * maxOf(s, 0.85f) else 160.dp * s
+    val targetHeight = if (isScanningOrSuccess) 84.dp * maxOf(s, 0.85f) else 36.dp * s
+    val targetCorner = if (isScanningOrSuccess) 24.dp * maxOf(s, 0.85f) else 18.dp * s
+
     val islandWidth by animateDpAsState(
-        targetValue = if (isScanningOrSuccess) 84.dp else 160.dp,
+        targetValue = targetWidth,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessMediumLow
+            stiffness = Spring.StiffnessMediumLow * speedScale
         ),
         label = "IslandWidth"
     )
 
     val islandHeight by animateDpAsState(
-        targetValue = if (isScanningOrSuccess) 84.dp else 36.dp,
+        targetValue = targetHeight,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessMediumLow
+            stiffness = Spring.StiffnessMediumLow * speedScale
         ),
         label = "IslandHeight"
     )
 
     val cornerRadius by animateDpAsState(
-        targetValue = if (isScanningOrSuccess) 24.dp else 18.dp,
+        targetValue = targetCorner,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
+            stiffness = Spring.StiffnessMedium * speedScale
         ),
         label = "IslandCorner"
     )
 
+    val d = islandDarkness.coerceIn(0f, 1f)
     // Luminous light rim gradient along the length of the capsule
-    val rimLightBrush = remember(scanState) {
+    val rimLightBrush = remember(scanState, d) {
         when (scanState) {
             ScanState.SUCCESS -> Brush.horizontalGradient(
                 listOf(AuraSuccess.copy(alpha = 0.5f), AuraSuccess, AuraSuccess.copy(alpha = 0.5f))
@@ -118,18 +130,32 @@ fun DynamicIslandBar(
             ScanState.SCANNING -> Brush.horizontalGradient(
                 listOf(AuraElectricAqua.copy(alpha = 0.4f), Color.White, AuraElectricAqua.copy(alpha = 0.4f))
             )
-            else -> Brush.horizontalGradient(
-                listOf(
-                    Color(0xFF1E2634),
-                    Color(0x8035F5E5), // soft aqua light rim running through center
-                    Color(0x40FFFFFF), // subtle glass reflection
-                    Color(0xFF1E2634)
-                )
-            )
+            else -> {
+                if (d >= 0.70f) {
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF141720), Color(0xFF222936), Color(0xFF141720))
+                    )
+                } else if (d < 0.45f) {
+                    Brush.horizontalGradient(
+                        listOf(Color(0x60FFFFFF), Color(0x8035F5E5), Color(0x60FFFFFF))
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF1E2634), Color(0xFF2C3748), Color(0xFF1E2634))
+                    )
+                }
+            }
         }
     }
 
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsState()
+    val bgColor = remember(d) { com.example.service.getIslandBackgroundColor(d) }
+
+    val shadowColor = when (scanState) {
+        ScanState.SUCCESS -> AuraSuccess
+        ScanState.SCANNING -> AuraElectricAqua
+        else -> Color.Black
+    }
 
     Box(
         modifier = modifier.testTag("dynamic_island_container"),
@@ -140,15 +166,15 @@ fun DynamicIslandBar(
                 .width(islandWidth)
                 .height(islandHeight)
                 .shadow(
-                    elevation = if (isScanningOrSuccess) 18.dp else 8.dp,
+                    elevation = if (isScanningOrSuccess) 18.dp else 6.dp,
                     shape = RoundedCornerShape(cornerRadius),
-                    ambientColor = if (scanState == ScanState.SUCCESS) AuraSuccess else AuraElectricAqua,
-                    spotColor = if (scanState == ScanState.SUCCESS) AuraSuccess else AuraElectricAqua
+                    ambientColor = shadowColor,
+                    spotColor = shadowColor
                 )
                 .clip(RoundedCornerShape(cornerRadius))
-                .background(Color(0xFF000000))
+                .background(bgColor)
                 .border(
-                    width = if (scanState == ScanState.SUCCESS) 1.5.dp else 1.1.dp,
+                    width = if (scanState == ScanState.SUCCESS) 1.5.dp else if (d >= 0.70f) 0.9.dp else 1.1.dp,
                     brush = rimLightBrush,
                     shape = RoundedCornerShape(cornerRadius)
                 )
@@ -180,7 +206,11 @@ fun DynamicIslandBar(
                     IPhoneFaceIDSquareCanvas(scanState = scanState)
                 } else {
                     // Resting Camera Notch Capsule
-                    RestingIslandPill()
+                    RestingIslandPill(
+                        darkness = d,
+                        scale = s,
+                        showGreenIndicator = greenLightEnabled
+                    )
                 }
             }
         }
@@ -188,71 +218,97 @@ fun DynamicIslandBar(
 }
 
 @Composable
-private fun RestingIslandPill() {
+private fun RestingIslandPill(
+    darkness: Float = 1.0f,
+    scale: Float = 1.0f,
+    showGreenIndicator: Boolean = false
+) {
+    val d = darkness.coerceIn(0f, 1f)
+    val s = scale.coerceIn(0.5f, 1.4f)
+    val color = if (d < 0.45f) Color(0xFFF1F5F9) else Color(0xFFB4BFCE)
+
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = (10.dp * s).coerceAtLeast(4.dp)),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left: Minimalist Face ID wireframe glyph
-        Canvas(modifier = Modifier.size(18.dp)) {
+        Canvas(modifier = Modifier.size((18.dp * s).coerceAtLeast(11.dp))) {
             val w = size.width
             val h = size.height
-            val color = Color(0xFFE2E8F0)
 
-            // Mini corner ticks
-            val b = 4f
-            drawLine(color, Offset(0f, 0f), Offset(b, 0f), 1.4f)
-            drawLine(color, Offset(0f, 0f), Offset(0f, b), 1.4f)
-            drawLine(color, Offset(w, 0f), Offset(w - b, 0f), 1.4f)
-            drawLine(color, Offset(w, 0f), Offset(w, b), 1.4f)
-            drawLine(color, Offset(0f, h), Offset(b, h), 1.4f)
-            drawLine(color, Offset(0f, h), Offset(0f, h - b), 1.4f)
-            drawLine(color, Offset(w, h), Offset(w - b, h), 1.4f)
-            drawLine(color, Offset(w, h), Offset(w, h - b), 1.4f)
+            val b = 3.5f * s
+            val strokeW = (1.2f * s).coerceAtLeast(0.8f)
+            drawLine(color, Offset(0f, 0f), Offset(b, 0f), strokeW)
+            drawLine(color, Offset(0f, 0f), Offset(0f, b), strokeW)
+            drawLine(color, Offset(w, 0f), Offset(w - b, 0f), strokeW)
+            drawLine(color, Offset(w, 0f), Offset(w, b), strokeW)
+            drawLine(color, Offset(0f, h), Offset(b, h), strokeW)
+            drawLine(color, Offset(0f, h), Offset(0f, h - b), strokeW)
+            drawLine(color, Offset(w, h), Offset(w - b, h), strokeW)
+            drawLine(color, Offset(w, h), Offset(w, h - b), strokeW)
 
             // Eyes
-            drawCircle(color, radius = 1.2f, center = Offset(w * 0.36f, h * 0.40f))
-            drawCircle(color, radius = 1.2f, center = Offset(w * 0.64f, h * 0.40f))
+            drawCircle(color, radius = 1.1f * s, center = Offset(w * 0.36f, h * 0.40f))
+            drawCircle(color, radius = 1.1f * s, center = Offset(w * 0.64f, h * 0.40f))
 
             // Smile
             val smile = Path().apply {
                 moveTo(w * 0.34f, h * 0.68f)
                 quadraticTo(w * 0.5f, h * 0.82f, w * 0.66f, h * 0.68f)
             }
-            drawPath(smile, color, style = Stroke(width = 1.2f, cap = StrokeCap.Round))
+            drawPath(smile, color, style = Stroke(width = strokeW, cap = StrokeCap.Round))
         }
 
-        // Center: Subtle micro light indicator along the capsule length
+        // Center: Clean stealth dark bar (no green light in center)
         Box(
             modifier = Modifier
-                .width(28.dp)
-                .height(2.5.dp)
+                .width((22.dp * s).coerceAtLeast(10.dp))
+                .height(2.dp)
                 .clip(CircleShape)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color(0x1A35F5E5), Color(0x6635F5E5), Color(0x1A35F5E5))
-                    )
-                )
+                .background(if (d >= 0.70f) Color(0xFF141923) else Color(0xFF222B3A))
         )
 
-        // Right side: Camera cutout optics module
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF0C1017))
-                .border(1.dp, Color(0xFF222C3D), CircleShape),
-            contentAlignment = Alignment.Center
+        // Right side: Green color privacy dot light + Camera cutout optics module
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy((5.dp * s).coerceAtLeast(3.dp))
         ) {
+            if (showGreenIndicator) {
+                Box(
+                    modifier = Modifier
+                        .size((7.5.dp * s).coerceAtLeast(4.5.dp))
+                        .clip(CircleShape)
+                        .background(Color(0xFF00E676))
+                        .border(0.8.dp, Color(0xFF69F0AE), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size((3.dp * s).coerceAtLeast(2.dp))
+                            .clip(CircleShape)
+                            .background(Color(0xFFE8FFF0))
+                    )
+                }
+            }
+
             Box(
                 modifier = Modifier
-                    .size(4.dp)
+                    .size((10.dp * s).coerceAtLeast(6.dp))
                     .clip(CircleShape)
-                    .background(Color(0xFF1E3A5F))
-            )
+                    .background(Color(0xFF080C13))
+                    .border(0.8.dp, if (d < 0.45f) Color(0xFF334155) else Color(0xFF1A2230), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size((4.dp * s).coerceAtLeast(2.5.dp))
+                        .clip(CircleShape)
+                        .background(Color(0xFF111E2E))
+                )
+            }
         }
     }
 }

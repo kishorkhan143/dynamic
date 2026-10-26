@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Aura Unlock</string>
+    <string name="accessibility_service_description">Detects when applications are opened to display the futuristic Face ID Dynamic Island overlay animation at your camera notch. This service only inspects package names and never reads screen contents or personal data.</string>
 </resources>

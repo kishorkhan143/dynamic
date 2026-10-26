@@ -13,6 +13,7 @@ import com.example.model.PresetCatalog
 import com.example.model.ScanPreset
 import com.example.model.ScanState
 import com.example.model.StudioConfig
+import com.example.service.OverlayTrigger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +57,66 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
     private val _isDynamicIslandEnabled = MutableStateFlow(true)
     val isDynamicIslandEnabled: StateFlow<Boolean> = _isDynamicIslandEnabled.asStateFlow()
 
+    // Dynamic Island Tone (Lightness/Darkness): 0.0f (lighter frosted slate) to 1.0f (pitch black OLED)
+    private val _islandDarkness = MutableStateFlow(repository.getIslandDarkness())
+    val islandDarkness: StateFlow<Float> = _islandDarkness.asStateFlow()
+
+    // Face ID Animation Velocity: 0.5x to 3.0x speed multiplier
+    private val _animationVelocity = MutableStateFlow(repository.getAnimationVelocity())
+    val animationVelocity: StateFlow<Float> = _animationVelocity.asStateFlow()
+
+    // Dynamic Island Position Y Offset (Distance from top camera / status bar)
+    private val _islandOffsetY = MutableStateFlow(repository.getIslandOffsetY())
+    val islandOffsetY: StateFlow<Int> = _islandOffsetY.asStateFlow()
+
+    // Dynamic Island Position X Offset (Horizontal alignment)
+    private val _islandOffsetX = MutableStateFlow(repository.getIslandOffsetX())
+    val islandOffsetX: StateFlow<Int> = _islandOffsetX.asStateFlow()
+
+    // Dynamic Island Size Scaling (0.5x to 1.4x)
+    private val _islandScale = MutableStateFlow(repository.getIslandScale())
+    val islandScale: StateFlow<Float> = _islandScale.asStateFlow()
+
+    // Green indicator light toggle
+    private val _greenLightEnabled = MutableStateFlow(repository.getGreenLightEnabled())
+    val greenLightEnabled: StateFlow<Boolean> = _greenLightEnabled.asStateFlow()
+
     private var scanSimulationJob: Job? = null
+
+    fun updateIslandDarkness(darkness: Float) {
+        val clamped = darkness.coerceIn(0.0f, 1.0f)
+        _islandDarkness.value = clamped
+        repository.saveIslandDarkness(clamped)
+    }
+
+    fun updateAnimationVelocity(velocity: Float) {
+        val clamped = velocity.coerceIn(0.5f, 3.0f)
+        _animationVelocity.value = clamped
+        repository.saveAnimationVelocity(clamped)
+    }
+
+    fun updateIslandOffsetY(offsetY: Int) {
+        val clamped = offsetY.coerceIn(0, 100)
+        _islandOffsetY.value = clamped
+        repository.saveIslandOffsetY(clamped)
+    }
+
+    fun updateIslandOffsetX(offsetX: Int) {
+        val clamped = offsetX.coerceIn(-100, 100)
+        _islandOffsetX.value = clamped
+        repository.saveIslandOffsetX(clamped)
+    }
+
+    fun updateIslandScale(scale: Float) {
+        val clamped = scale.coerceIn(0.5f, 1.4f)
+        _islandScale.value = clamped
+        repository.saveIslandScale(clamped)
+    }
+
+    fun updateGreenLightEnabled(enabled: Boolean) {
+        _greenLightEnabled.value = enabled
+        repository.saveGreenLightEnabled(enabled)
+    }
 
     fun selectPreset(preset: ScanPreset) {
         val current = _studioConfig.value
@@ -154,12 +214,13 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
         _realtimeFaceData.value = data
 
         // Synchronize animation states seamlessly with real-time face detection
+        val velocity = _animationVelocity.value.coerceIn(0.5f, 3.0f)
         if (data.status == RecognitionStatus.VERIFIED && _scanState.value != ScanState.SUCCESS) {
             _scanState.value = ScanState.SUCCESS
             _scanProgress.value = 1f
             _isDynamicIslandExpanded.value = true
             viewModelScope.launch {
-                delay(1500)
+                delay((1200L / velocity).toLong())
                 _scanState.value = ScanState.IDLE
                 _scanProgress.value = 0f
                 _isDynamicIslandExpanded.value = false
@@ -178,15 +239,17 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun triggerAppOpenUnlock() {
+        OverlayTrigger.fire(OverlayTrigger.Source.APP_OPENED)
         scanSimulationJob?.cancel()
         scanSimulationJob = viewModelScope.launch {
+            val velocity = _animationVelocity.value.coerceIn(0.5f, 3.0f)
             _isAppUnlocked.value = false
             _isDynamicIslandExpanded.value = true
             _scanState.value = ScanState.SCANNING
             _scanProgress.value = 0f
 
             val totalSteps = 28
-            val stepDelay = 35L
+            val stepDelay = ((35L) / velocity).toLong().coerceAtLeast(8L)
 
             for (i in 1..totalSteps) {
                 delay(stepDelay)
@@ -195,13 +258,13 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
 
             // Morph into green checkmark
             _scanState.value = ScanState.SUCCESS
-            delay(750)
+            delay((750L / velocity).toLong())
 
             // Unlock the application now that animation completed
             _isAppUnlocked.value = true
 
             // Smoothly retract the dynamic island
-            delay(500)
+            delay((450L / velocity).toLong())
             _scanState.value = ScanState.IDLE
             _scanProgress.value = 0f
             _isDynamicIslandExpanded.value = false
@@ -213,8 +276,10 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun startScanSimulation() {
+        OverlayTrigger.fire(OverlayTrigger.Source.MANUAL)
         scanSimulationJob?.cancel()
         scanSimulationJob = viewModelScope.launch {
+            val velocity = _animationVelocity.value.coerceIn(0.5f, 3.0f)
             if (_isDynamicIslandEnabled.value) {
                 _isDynamicIslandExpanded.value = true
             }
@@ -222,7 +287,7 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
             _scanProgress.value = 0f
 
             val totalSteps = 28
-            val stepDelay = 35L
+            val stepDelay = ((35L) / velocity).toLong().coerceAtLeast(8L)
 
             for (i in 1..totalSteps) {
                 delay(stepDelay)
@@ -230,7 +295,7 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             _scanState.value = ScanState.SUCCESS
-            delay(850)
+            delay((850L / velocity).toLong())
             _scanState.value = ScanState.IDLE
             _scanProgress.value = 0f
             _isDynamicIslandExpanded.value = false
@@ -240,19 +305,21 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
     fun triggerRetrySimulation() {
         scanSimulationJob?.cancel()
         scanSimulationJob = viewModelScope.launch {
+            val velocity = _animationVelocity.value.coerceIn(0.5f, 3.0f)
             if (_isDynamicIslandEnabled.value) {
                 _isDynamicIslandExpanded.value = true
             }
             _scanState.value = ScanState.SCANNING
             _scanProgress.value = 0f
 
+            val stepDelay = ((35L) / velocity).toLong().coerceAtLeast(8L)
             for (i in 1..16) {
-                delay(35)
+                delay(stepDelay)
                 _scanProgress.value = (i.toFloat() / 28)
             }
 
             _scanState.value = ScanState.RETRY
-            delay(1200)
+            delay((1200L / velocity).toLong())
             _scanState.value = ScanState.IDLE
             _scanProgress.value = 0f
             _isDynamicIslandExpanded.value = false
@@ -281,5 +348,11 @@ class AuraUnlockViewModel(application: Application) : AndroidViewModel(applicati
         _favorites.value = repository.getFavorites()
         _scanState.value = ScanState.IDLE
         _scanProgress.value = 0f
+        _islandDarkness.value = repository.getIslandDarkness()
+        _animationVelocity.value = repository.getAnimationVelocity()
+        _islandOffsetY.value = repository.getIslandOffsetY()
+        _islandOffsetX.value = repository.getIslandOffsetX()
+        _islandScale.value = repository.getIslandScale()
+        _greenLightEnabled.value = repository.getGreenLightEnabled()
     }
 }

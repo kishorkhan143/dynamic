@@ -8,6 +8,7 @@ import com.example.model.BackgroundMode
 import com.example.model.ParticleDensity
 import com.example.model.PresetCatalog
 import com.example.model.StudioConfig
+import com.example.service.OverlayTrigger
 
 class SettingsRepository(context: Context) {
     private val prefs: SharedPreferences =
@@ -24,6 +25,82 @@ class SettingsRepository(context: Context) {
         private const val KEY_PARTICLE_DENSITY = "studio_particle_density"
         private const val KEY_BG_MODE = "studio_bg_mode"
         private const val KEY_CAMERA_PREVIEW_ENABLED = "camera_preview_enabled"
+        private const val KEY_ISLAND_DARKNESS = "island_darkness"
+        private const val KEY_ANIMATION_VELOCITY = "animation_velocity"
+        private const val KEY_ISLAND_OFFSET_Y = "island_offset_y"
+        private const val KEY_ISLAND_OFFSET_X = "island_offset_x"
+        private const val KEY_ISLAND_SCALE = "island_scale"
+        private const val KEY_GREEN_LIGHT_ENABLED = "green_light_enabled"
+    }
+
+    init {
+        // Sync persisted values to OverlayTrigger singleton
+        OverlayTrigger.updateIslandDarkness(getIslandDarkness())
+        OverlayTrigger.updateAnimationVelocity(getAnimationVelocity())
+        OverlayTrigger.updateIslandOffsetY(getIslandOffsetY())
+        OverlayTrigger.updateIslandOffsetX(getIslandOffsetX())
+        OverlayTrigger.updateIslandScale(getIslandScale())
+        OverlayTrigger.updateGreenLightEnabled(getGreenLightEnabled())
+    }
+
+    fun getIslandOffsetY(): Int {
+        return prefs.getInt(KEY_ISLAND_OFFSET_Y, 12)
+    }
+
+    fun saveIslandOffsetY(offsetY: Int) {
+        val clamped = offsetY.coerceIn(0, 100)
+        prefs.edit().putInt(KEY_ISLAND_OFFSET_Y, clamped).apply()
+        OverlayTrigger.updateIslandOffsetY(clamped)
+    }
+
+    fun getIslandOffsetX(): Int {
+        return prefs.getInt(KEY_ISLAND_OFFSET_X, 0)
+    }
+
+    fun saveIslandOffsetX(offsetX: Int) {
+        val clamped = offsetX.coerceIn(-100, 100)
+        prefs.edit().putInt(KEY_ISLAND_OFFSET_X, clamped).apply()
+        OverlayTrigger.updateIslandOffsetX(clamped)
+    }
+
+    fun getIslandScale(): Float {
+        return prefs.getFloat(KEY_ISLAND_SCALE, 1.0f)
+    }
+
+    fun saveIslandScale(scale: Float) {
+        val clamped = scale.coerceIn(0.5f, 1.4f)
+        prefs.edit().putFloat(KEY_ISLAND_SCALE, clamped).apply()
+        OverlayTrigger.updateIslandScale(clamped)
+    }
+
+    fun getGreenLightEnabled(): Boolean {
+        // Default true: persistent green color dot light on the dynamic island
+        return prefs.getBoolean(KEY_GREEN_LIGHT_ENABLED, true)
+    }
+
+    fun saveGreenLightEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GREEN_LIGHT_ENABLED, enabled).apply()
+        OverlayTrigger.updateGreenLightEnabled(enabled)
+    }
+
+    fun getIslandDarkness(): Float {
+        return prefs.getFloat(KEY_ISLAND_DARKNESS, 1.0f)
+    }
+
+    fun saveIslandDarkness(darkness: Float) {
+        val clamped = darkness.coerceIn(0.0f, 1.0f)
+        prefs.edit().putFloat(KEY_ISLAND_DARKNESS, clamped).apply()
+        OverlayTrigger.updateIslandDarkness(clamped)
+    }
+
+    fun getAnimationVelocity(): Float {
+        return prefs.getFloat(KEY_ANIMATION_VELOCITY, 1.0f)
+    }
+
+    fun saveAnimationVelocity(velocity: Float) {
+        val clamped = velocity.coerceIn(0.5f, 3.0f)
+        prefs.edit().putFloat(KEY_ANIMATION_VELOCITY, clamped).apply()
+        OverlayTrigger.updateAnimationVelocity(clamped)
     }
 
     fun getActivePresetId(): String {
@@ -108,6 +185,12 @@ class SettingsRepository(context: Context) {
 
     fun resetAllSettings(): StudioConfig {
         prefs.edit().clear().apply()
+        OverlayTrigger.updateIslandDarkness(1.0f)
+        OverlayTrigger.updateAnimationVelocity(1.0f)
+        OverlayTrigger.updateIslandOffsetY(12)
+        OverlayTrigger.updateIslandOffsetX(0)
+        OverlayTrigger.updateIslandScale(1.0f)
+        OverlayTrigger.updateGreenLightEnabled(false)
         return loadStudioConfig()
     }
 }
